@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Farming Area WS-FFQ (Skip-Logic Questionnaire)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    body { padding: 2rem; background: #f8f9fa; }
+    .category-block { margin-bottom: 1.5rem; padding: 1rem; background: #fff; border-radius: 8px; box-shadow: 0 0 6px rgba(0,0,0,0.05); }
+    .subitems { margin-left: 2rem; }
+    .hidden { display: none; }
+    .freq-options label { margin-right: 10px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2 class="mb-4">Food Frequency Questionnaire (FFQ)</h2>
+    <div class="mb-3">
+      <label for="userId" class="form-label">Participant ID:</label>
+      <input type="text" class="form-control" id="userId" placeholder="Enter ID">
+    </div>
+    <div id="ffqForm"></div>
+    <div class="d-flex gap-2 mt-4">
+      <button class="btn btn-secondary" onclick="saveForm(true)">Save questionnaire</button>
+      <button class="btn btn-danger" onclick="clearForm()">Clear all questionnaires</button>
+      <button class="btn btn-primary" onclick="exportAllToExcel()">Export all to Excel</button>
+    </div>
+    <hr>
+    <h5>📋 Saved participant IDs:</h5>
+    <ul id="savedList"></ul>
+  </div>
+
+  <script>
+    const frequencyOptions = [">=3 times/day", "2 times/day", "1 time/day", "4-6 times/week", "1-3 times/week", "1-3 times/month", "<1 time/month", "Never"];
+    const unitOptions = ["g", "piece", "bowl", "cup"];
+    const freshnessOptions = [
+      "For meat/wild vegetables: choose freshness; for fruits/vegetables: choose local vs non-local",
+      "Fresh",
+      "Frozen/Refrigerated",
+      "Local",
+      "Non-local"
+    ];
+
+    const ffqData = `Wheat flour products\tTsampa (roasted barley flour)
+Wheat flour products\tTibetan noodles
+Wheat flour products\tNoodles
+Wheat flour products\tSteamed buns (mantou)
+Wheat flour products\tFried flatbread
+Wheat flour products\tOther wheat flour products (dried noodles, fried dough sticks, steamed rolls, baked flatbread, etc.)
+Rice and rice products\tCooked rice
+Rice and rice products\tOther rice products (porridge, rice noodles, etc.)
+Stuffed dough foods\tStuffed dough foods (baozi, dumplings)
+Tubers\tPotato
+Tubers\tTibetan "ginseng fruit" (renshengguo)
+Tubers\tOther tubers (sweet potato, taro, yam, etc.)
+Coarse grains\tCoarse grains (buckwheat, oats, millet, black rice, brown rice, corn)
+Red meat\tFresh yak meat
+Red meat\tFresh beef
+Red meat\tFresh pork
+Red meat\tOther fresh red meat (e.g., mutton, rabbit, etc.)
+Processed meat\tDried yak meat
+Processed meat\tOther processed meat (sausage, smoked meat, luncheon meat, ham, etc.)
+Poultry\tPoultry (chicken, duck, goose, etc.)
+Eggs\tChicken eggs
+Eggs\tOther eggs (duck, quail, etc.)
+Fish & seafood\tFish & seafood
+Soybeans & soy products\tSoybeans (black soybeans, soybeans, green soybeans)
+Soybeans & soy products\tSoy products (dried tofu, tofu strips, etc.)
+Other legumes\tOther legumes (mung bean, red bean, fava bean, kidney bean, etc.)
+Nuts & seeds\tNuts & seeds (peanuts, walnuts, sunflower seeds, etc.)
+Dark-colored vegetables\tChives
+Dark-colored vegetables\tTibetan fennel
+Dark-colored vegetables\tTomato
+Dark-colored vegetables\tGreen chili pepper
+Dark-colored vegetables\tOther dark-colored vegetables (spinach, carrot, water spinach, etc.)
+Light-colored vegetables\tWhite radish
+Light-colored vegetables\tTurnip / rutabaga
+Light-colored vegetables\tBaby napa cabbage
+Light-colored vegetables\tBok choy
+Light-colored vegetables\tOther light-colored vegetables (napa cabbage, cucumber, lettuce, eggplant, etc.)
+Mushrooms & seaweeds\tEnoki mushroom
+Mushrooms & seaweeds\tOther mushrooms/seaweeds (enoki, oyster mushroom, seaweed, etc.)
+Fruits\tApple
+Fruits\tPeach
+Fruits\tMandarin orange
+Fruits\tBanana
+Fruits\tOther fruits (grapes, watermelon, etc.)
+Dairy\tYak butter (ghee)
+Dairy\tDried cheese / curds
+Dairy\tFresh milk
+Dairy\tOther dairy (yogurt, milk powder, cheese, etc.)
+Beverages\tButter tea
+Beverages\tTibetan tea / plain tea
+Beverages\tSweet tea
+Beverages\tWater (boiled/plain)
+Beverages\tOther drinks (cola, milk tea, etc.)
+Alcoholic beverages\tHighland barley liquor
+Alcoholic beverages\tHighland barley beer
+Alcoholic beverages\tBeer
+Alcoholic beverages\tBaijiu (spirits)
+Alcoholic beverages\tRed wine / grape wine
+Snacks\tSnacks (instant noodles, biscuits, bread, cake, etc.)`;
+
+    const grouped = {};
+    ffqData.split("\n").forEach(line => {
+      const [category, item] = line.split("\t");
+      if (!grouped[category]) grouped[category] = [];
+      grouped[category].push(item);
+    });
+
+    function renderForm() {
+      const form = document.getElementById("ffqForm");
+      form.innerHTML = "";
+      Object.entries(grouped).forEach(([category, items], index) => {
+        const block = document.createElement("div");
+        block.className = "category-block";
+        const id = `category_${index}`;
+        block.innerHTML = `
+          <label><strong>${category}</strong></label><br>
+          <label class="form-check-label">
+            <input type="checkbox" class="form-check-input toggle-subitems" data-target="${id}"> Consume foods in this category
+          </label>
+          <div class="subitems hidden" id="${id}">
+            ${items.map(item => `
+              <div class="row mb-2">
+                <div class="col-md-3">${item}</div>
+                <div class="col-md-5 freq-options">
+                  ${frequencyOptions.map(opt => `<label><input type='radio' name='freq_${item}' value='${opt}'> ${opt}</label>`).join(" ")}
+                </div>
+                <div class="col-md-4">
+                  <input type="text" class="form-control amount" placeholder="Amount">
+                  <select class="form-select mt-1 unit">
+                    ${unitOptions.map(u => `<option>${u}</option>`).join("")}
+                  </select>
+                </div>
+                <div class="col-md-2">
+                  <select class="form-select freshness">
+                    ${freshnessOptions.map(f => `<option>${f}</option>`).join("")}
+                  </select>
+               </div>
+              </div>`).join("")}
+          </div>`;
+        form.appendChild(block);
+      });
+
+      document.querySelectorAll('.toggle-subitems').forEach(cb => {
+        cb.addEventListener('change', () => {
+          const target = document.getElementById(cb.dataset.target);
+          target.classList.toggle('hidden', !cb.checked);
+        });
+      });
+    }
+
+    function saveForm(showBlank = false) {
+      const id = document.getElementById("userId").value.trim();
+      if (!id) return alert("Please enter the participant ID.");
+
+      const data = [];
+      document.querySelectorAll('.category-block').forEach(block => {
+        const category = block.querySelector("strong").innerText;
+        const checked = block.querySelector("input[type='checkbox']").checked;
+        if (!checked) return;
+
+        block.querySelectorAll(".row").forEach(row => {
+          const item = row.children[0].innerText;
+          const freq = row.querySelector("input[type='radio']:checked")?.value || "Not selected";
+          const amount = row.querySelector("input.amount")?.value.trim() || "";
+          const unit = row.querySelector("select.unit")?.value || "";
+          const freshness = row.querySelector("select.freshness")?.value || "";
+          data.push([category, item, freq, amount, unit, freshness]);
+        });
+      });
+
+      const savedAll = JSON.parse(localStorage.getItem("ffq_data_all") || '{}');
+      savedAll[id] = data;
+      localStorage.setItem("ffq_data_all", JSON.stringify(savedAll));
+
+      alert("✅ Questionnaire saved.");
+      listSavedIDs();
+      if (showBlank) {
+        document.getElementById("userId").value = "";
+        renderForm();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    }
+
+    function clearForm() {
+      if (confirm("⚠️ Are you sure you want to clear all saved questionnaire data?")) {
+        localStorage.removeItem("ffq_data_all");
+        location.reload();
+      }
+    }
+
+    function exportAllToExcel() {
+      const savedAll = JSON.parse(localStorage.getItem("ffq_data_all") || '{}');
+      const wb = XLSX.utils.book_new();
+      Object.entries(savedAll).forEach(([id, data]) => {
+        const ws_data = [["Participant ID", id], [], ["Category", "Food item", "Frequency", "Amount per time", "Unit", "Freshness / Locality"]];
+        data.forEach(row => ws_data.push(row));
+        const ws = XLSX.utils.aoa_to_sheet(ws_data);
+        XLSX.utils.book_append_sheet(wb, ws, id);
+      });
+      XLSX.writeFile(wb, `All_FFQ_Questionnaires.xlsx`);
+    }
+
+    function listSavedIDs() {
+      const savedAll = JSON.parse(localStorage.getItem("ffq_data_all") || '{}');
+      const list = document.getElementById("savedList");
+      list.innerHTML = "";
+      Object.keys(savedAll).forEach(id => {
+        const li = document.createElement("li");
+        li.innerHTML = `<a href="#" onclick="document.getElementById('userId').value='${id}'; renderForm(); fillForm('${id}'); return false;">${id}</a>`;
+        list.appendChild(li);
+      });
+    }
+
+    function fillForm(id) {
+      const savedAll = JSON.parse(localStorage.getItem("ffq_data_all") || '{}');
+      const data = savedAll[id];
+      if (!data) return;
+
+      data.forEach(([category, item, freq, amount, unit, freshness]) => {
+        const block = [...document.querySelectorAll(".category-block")]
+          .find(b => b.querySelector("strong").innerText === category);
+        if (!block) return;
+
+        const checkbox = block.querySelector("input[type='checkbox']");
+        checkbox.checked = true;
+
+        const subitems = block.querySelector(".subitems");
+        subitems.classList.remove("hidden");
+
+        const row = [...subitems.querySelectorAll(".row")]
+          .find(r => r.children[0].innerText === item);
+
+        if (row) {
+          const radio = [...row.querySelectorAll("input[type='radio']")]
+            .find(r => r.value === freq);
+          if (radio) radio.checked = true;
+          row.querySelector("input.amount").value = amount;
+          row.querySelector("select.unit").value = unit;
+          row.querySelector("select.freshness").value = freshness || "";
+        }
+      });
+    }
+
+    renderForm();
+    listSavedIDs();
+  </script>
+</body>
+</html>
