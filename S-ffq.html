@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <title>农区 FFQ 跳跃式问卷</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    body { padding: 2rem; background: #f8f9fa; }
+    .category-block { margin-bottom: 1.5rem; padding: 1rem; background: #fff; border-radius: 8px; box-shadow: 0 0 6px rgba(0,0,0,0.05); }
+    .subitems { margin-left: 2rem; }
+    .hidden { display: none; }
+    .freq-options label { margin-right: 10px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2 class="mb-4">膳食频率问卷（FFQ）</h2>
+    <div class="mb-3">
+      <label for="userId" class="form-label">受试者编号：</label>
+      <input type="text" class="form-control" id="userId" placeholder="请输入ID">
+    </div>
+    <div id="ffqForm"></div>
+    <div class="d-flex gap-2 mt-4">
+      <button class="btn btn-secondary" onclick="saveForm(true)">保存问卷</button>
+      <button class="btn btn-danger" onclick="clearForm()">清空所有问卷</button>
+      <button class="btn btn-primary" onclick="exportAllToExcel()">导出所有 Excel</button>
+    </div>
+    <hr>
+    <h5>📋 已保存的受试者编号：</h5>
+    <ul id="savedList"></ul>
+  </div>
+
+  <script>
+    const frequencyOptions = [">=3次/天", "2次/天", "1次/天", "4~6次/周", "1~3次/周", "1~3次/月", "<1次/月", "不吃"];
+    const unitOptions = ["g", "个", "碗",'杯'];
+    const ffqData = `面及其制品\t糌粑\n面及其制品\t藏面\n面及其制品\t面条\n面及其制品\t馒头\n面及其制品\t油饼\n面及其制品\t其他面及其制品（挂面油条花卷烧饼等）\n米及米制品\t米饭\n米及米制品\t其他米及米制品（粥，米粉等）\n有陷类\t有陷类食物（包子、饺子）\n薯类\t马铃薯/土豆\n薯类\t藏区人参果\n薯类\t其他薯类（红薯、芋头、山药、番薯等）\n杂粮类\t杂粮类（荞麦、燕麦、小米、黑米、糙米、玉米）\n红肉类\t牦牛肉（鲜）\n红肉类\t牛肉（鲜）\n红肉类\t猪肉（鲜）\n红肉类\t其他新鲜红肉（羊肉、兔肉等）\n加工肉类\t牦牛肉干\n加工肉类\t其他加工肉（腊肠、熏肉、午餐肉、火腿肉等）\n禽类\t禽类（鸡肉、鸭肉、鹅肉等）\n蛋类\t白鸡蛋\n蛋类\t其他蛋类（鸭蛋、鹌鹑蛋等）\n鱼虾蟹贝类\t鱼虾蟹贝类\n大豆及其制品\t大豆类（黑豆、黄豆、青豆）\n大豆及其制品\t豆制品（豆腐干、豆腐丝等）\n杂豆类\t杂豆类（绿豆、红豆、蚕豆、芸豆等）\n坚果类\t坚果类（花生、核桃、瓜子等）\n深色蔬菜类\t细香葱\n深色蔬菜类\t藏茴香\n深色蔬菜类\t番茄/西红柿\n深色蔬菜类\t青辣椒\n深色蔬菜类\t其他深色蔬菜类（菠菜、胡萝卜、空心菜等）\n浅色蔬菜类\t白萝卜\n浅色蔬菜类\t芜菁\n浅色蔬菜类\t娃娃菜\n浅色蔬菜类\t小白菜\n浅色蔬菜类\t其他浅色蔬菜类（大白菜、黄瓜、莴苣、茄子等）\n菌藻类\t金蘑菇\n菌藻类\t其他菌藻类（金针菇、平菇、海草等）\n水果类\t苹果\n水果类\t桃\n水果类\t橘子/桔子\n水果类\t香蕉\n水果类\t其他水果类（葡萄、西瓜等）\n奶类\t酥油\n奶类\t奶渣\n奶类\t鲜牛奶\n奶类\t其他奶类（酸奶、奶粉、奶酪等）\n饮品类\t酥油茶\n饮品类\t藏茶/清茶\n饮品类\t甜茶\n饮品类\t水（开水、白开水）\n饮品类\t其他饮料（可乐、奶茶等）\n酒类\t青稞酒\n酒类\t青稞啤酒\n酒类\t啤酒\n酒类\t白酒\n酒类\t红/葡萄酒\n零食类\t零食（方便面、饼干、面包、蛋糕等）`;
+    const freshnessOptions = ['肉类野菜需选新鲜与否 水果蔬菜选本地外地',"新鲜", "冷冻\冷藏", "本地",'外地'];
+    const grouped = {};
+    ffqData.split("\n").forEach(line => {
+      const [category, item] = line.split("\t");
+      if (!grouped[category]) grouped[category] = [];
+      grouped[category].push(item);
+    });
+
+    function renderForm() {
+      const form = document.getElementById("ffqForm");
+      form.innerHTML = "";
+      Object.entries(grouped).forEach(([category, items], index) => {
+        const block = document.createElement("div");
+        block.className = "category-block";
+        const id = `category_${index}`;
+        block.innerHTML = `
+          <label><strong>${category}</strong></label><br>
+          <label class="form-check-label">
+            <input type="checkbox" class="form-check-input toggle-subitems" data-target="${id}"> 吃此类食物
+          </label>
+          <div class="subitems hidden" id="${id}">
+            ${items.map(item => `
+              <div class="row mb-2">
+                <div class="col-md-3">${item}</div>
+                <div class="col-md-5 freq-options">
+                  ${frequencyOptions.map(opt => `<label><input type='radio' name='freq_${item}' value='${opt}'> ${opt}</label>`).join(" ")}
+                </div>
+                <div class="col-md-4">
+                  <input type="text" class="form-control amount" placeholder="数量">
+                  <select class="form-select mt-1 unit">
+                    ${unitOptions.map(u => `<option>${u}</option>`).join("")}
+                  </select>
+                </div>
+                <div class="col-md-2">
+                  <select class="form-select freshness">
+                    ${freshnessOptions.map(f => `<option>${f}</option>`).join("")}
+                  </select>
+               </div>
+              </div>`).join("")}
+
+          </div>`;
+        form.appendChild(block);
+      });
+
+      document.querySelectorAll('.toggle-subitems').forEach(cb => {
+        cb.addEventListener('change', () => {
+          const target = document.getElementById(cb.dataset.target);
+          target.classList.toggle('hidden', !cb.checked);
+        });
+      });
+    }
+
+    function saveForm(showBlank = false) {
+      const id = document.getElementById("userId").value.trim();
+      if (!id) return alert("请填写受试者编号");
+
+      const data = [];
+      document.querySelectorAll('.category-block').forEach(block => {
+        const category = block.querySelector("strong").innerText;
+        const checked = block.querySelector("input[type='checkbox']").checked;
+        if (!checked) return;
+
+        block.querySelectorAll(".row").forEach(row => {
+          const item = row.children[0].innerText;
+          const freq = row.querySelector("input[type='radio']:checked")?.value || "未选择";
+          const amount = row.querySelector("input.amount")?.value.trim() || "";
+          const unit = row.querySelector("select.unit")?.value || "";
+          const freshness = row.querySelector("select.freshness")?.value || "";
+          data.push([category, item, freq, amount, unit, freshness]);
+
+        });
+      });
+
+      const savedAll = JSON.parse(localStorage.getItem("ffq_data_all") || '{}');
+      savedAll[id] = data;
+      localStorage.setItem("ffq_data_all", JSON.stringify(savedAll));
+
+      alert("✅ 当前问卷已保存");
+      listSavedIDs();
+      if (showBlank) {
+        document.getElementById("userId").value = "";
+        renderForm();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    }
+
+    function clearForm() {
+      if (confirm("⚠️ 确定清除所有保存的问卷数据？")) {
+        localStorage.removeItem("ffq_data_all");
+        location.reload();
+      }
+    }
+
+    function exportAllToExcel() {
+      const savedAll = JSON.parse(localStorage.getItem("ffq_data_all") || '{}');
+      const wb = XLSX.utils.book_new();
+      Object.entries(savedAll).forEach(([id, data]) => {
+        const ws_data = [["受试者ID", id], [], ["类别", "食物", "频率", "每次数量", "单位", "新鲜本地与否"]];
+        data.forEach(row => ws_data.push(row));
+        const ws = XLSX.utils.aoa_to_sheet(ws_data);
+        XLSX.utils.book_append_sheet(wb, ws, id);
+      });
+      XLSX.writeFile(wb, `所有FFQ问卷.xlsx`);
+    }
+
+    function listSavedIDs() {
+      const savedAll = JSON.parse(localStorage.getItem("ffq_data_all") || '{}');
+      const list = document.getElementById("savedList");
+      list.innerHTML = "";
+      Object.keys(savedAll).forEach(id => {
+        const li = document.createElement("li");
+        li.innerHTML = `<a href="#" onclick="document.getElementById('userId').value='${id}'; renderForm(); fillForm('${id}'); return false;">${id}</a>`;
+        list.appendChild(li);
+      });
+    }
+    function fillForm(id) {
+  const savedAll = JSON.parse(localStorage.getItem("ffq_data_all") || '{}');
+  const data = savedAll[id];
+  if (!data) return;
+
+  data.forEach(([category, item, freq, amount, unit, freshness]) => {
+
+    const block = [...document.querySelectorAll(".category-block")]
+      .find(b => b.querySelector("strong").innerText === category);
+    if (!block) return;
+    const checkbox = block.querySelector("input[type='checkbox']");
+    checkbox.checked = true;
+    const subitems = block.querySelector(".subitems");
+    subitems.classList.remove("hidden");
+
+    const row = [...subitems.querySelectorAll(".row")]
+      .find(r => r.children[0].innerText === item);
+    if (row) {
+      const radio = [...row.querySelectorAll("input[type='radio']")]
+        .find(r => r.value === freq);
+      if (radio) radio.checked = true;
+      row.querySelector("input.amount").value = amount;
+      row.querySelector("select.unit").value = unit;
+      row.querySelector("select.freshness").value = freshness || "";
+    }
+
+  });
+}
+
+
+    renderForm();
+    listSavedIDs();
+  </script>
+</body>
+</html>
